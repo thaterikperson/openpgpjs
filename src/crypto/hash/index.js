@@ -16,16 +16,37 @@ import ripemd from './ripe-md.js';
 import util from '../../util.js';
 
 const rusha = new Rusha(),
+  webCrypto = util.getWebCrypto(),
   nodeCrypto = util.getNodeCrypto(),
   Buffer = util.getNodeBuffer();
 
+// Node.js setup
+
 function node_hash(type) {
-  return function (data) {
+  return util.promisify(function (data) {
     var shasum = nodeCrypto.createHash(type);
     shasum.update(new Buffer(data));
     return new Uint8Array(shasum.digest());
+  });
+}
+
+// Web Crypto setup
+
+function webCrypto_hash(type) {
+  return function(data) {
+    var res = webCrypto.digest({ name: type }, data);
+
+    if (typeof res.then !== 'function') { // IE11
+      res = util.romisifyIE11Op(res, 'Error hashing data using ' + type);
+    }
+
+    return res.then(function(arrbuf){
+      return new Uint8Array(arrbuf);
+    });
   };
 }
+
+// Set hash operations depending on platform
 
 var hash_fns;
 if(nodeCrypto) { // Use Node native crypto for all hash functions
@@ -44,21 +65,30 @@ if(nodeCrypto) { // Use Node native crypto for all hash functions
 
   hash_fns = {
     /** @see module:crypto/hash/md5 */
-    md5: md5,
+    md5: util.promisify(md5),
     /** @see module:rusha */
-    sha1: function(data) {
+    sha1: util.promisify(function(data) {
       return util.str2Uint8Array(util.hex2bin(rusha.digest(data)));
-    },
+    }),
     /** @see module:crypto/hash/sha.sha224 */
-    sha224: sha.sha224,
+    sha224: util.promisify(sha.sha224),
     /** @see module:asmcrypto */
-    sha256: asmCrypto.SHA256.bytes,
+    sha256: util.promisify(asmCrypto.SHA256.bytes),
     /** @see module:crypto/hash/sha.sha384 */
-    sha384: sha.sha384,
+    sha384: util.promisify(sha.sha384),
     /** @see module:crypto/hash/sha.sha512 */
-    sha512: sha.sha512,
+    sha512: util.promisify(sha.sha512),
     /** @see module:crypto/hash/ripe-md */
-    ripemd: ripemd
+    ripemd: util.promisify(ripemd)
+  };
+}
+
+if (webCrypto) { // Override SHA operations with native Web Crypto apis (if available)
+  hash_fns = {
+    sha1: webCrypto_hash('SHA-1'),
+    sha256 : webCrypto_hash('SHA-256'),
+    sha384 : webCrypto_hash('SHA-384'),
+    sha512 : webCrypto_hash('SHA-512'),
   };
 }
 
