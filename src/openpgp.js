@@ -32,14 +32,15 @@
 
 'use strict';
 
+import 'es6-promise'; // ES6 Promise polyfill
+import 'regenerator-runtime/runtime'; // ES6 generator runtime/polyfill
+import co from 'co'; // spawn function to wrap generator -> return Promise
 import * as messageLib from './message.js';
 import * as cleartext from './cleartext.js';
 import * as key from './key.js';
 import config from './config/config.js';
 import util from './util';
 import AsyncProxy from './worker/async_proxy.js';
-import es6Promise from 'es6-promise';
-es6Promise.polyfill(); // load ES6 Promises polyfill
 
 
 //////////////////////////
@@ -103,13 +104,16 @@ export function generateKey({ userIds=[], passphrase, numBits=2048, unlocked=fal
     return asyncProxy.delegate('generateKey', options);
   }
 
-  return key.generate(options).then(newKey => ({
+  return co(function *() {
 
-    key: newKey,
-    privateKeyArmored: newKey.armor(),
-    publicKeyArmored: newKey.toPublic().armor()
+    let newKey = yield key.generate(options);
+    return {
+      key: newKey,
+      privateKeyArmored: newKey.armor(),
+      publicKeyArmored: newKey.toPublic().armor()
+    };
 
-  })).catch(onError.bind(null, 'Error generating keypair'));
+  }).catch(onError.bind(null, 'Error generating keypair'));
 }
 
 /**
@@ -162,24 +166,17 @@ export function encrypt({ data, publicKeys, privateKeys, passwords, filename, ar
     return asyncProxy.delegate('encrypt', { data, publicKeys, privateKeys, passwords, filename, armor });
   }
 
-  return Promise.resolve().then(() => {
+  return co(function *() {
 
     let message = createMessage(data, filename);
     if (privateKeys) { // sign the message only if private keys are specified
       message = message.sign(privateKeys);
     }
-    return message.encrypt(publicKeys, passwords);
-
-  }).then(message => {
-
+    message = yield message.encrypt(publicKeys, passwords);
     if(armor) {
-      return {
-        data: message.armor()
-      };
+      return { data: message.armor() };
     }
-    return {
-      message: message
-    };
+    return { message };
 
   }).catch(onError.bind(null, 'Error encrypting message'));
 }
@@ -204,8 +201,9 @@ export function decrypt({ message, privateKey, publicKeys, sessionKey, password,
     return asyncProxy.delegate('decrypt', { message, privateKey, publicKeys, sessionKey, password, format });
   }
 
-  return message.decrypt(privateKey, sessionKey, password).then(message => {
+  return co(function *() {
 
+    message = yield message.decrypt(privateKey, sessionKey, password);
     const result = parseMessage(message, format);
     if (publicKeys && result.data) { // verify only if publicKeys are specified
       result.signatures = message.verify(publicKeys);
