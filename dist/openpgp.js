@@ -13443,7 +13443,7 @@ Key.prototype.getEncryptionKeyPacket = function () {
   }
   // if no valid subkey for encryption, evaluate primary key
   var primaryUser = this.getPrimaryUser();
-  if (primaryUser && isValidEncryptionKeyPacket(this.primaryKey, primaryUser.selfCertificate)) {
+  if (primaryUser && primaryUser.selfCertificate && !primaryUser.selfCertificate.isExpired && isValidEncryptionKeyPacket(this.primaryKey, primaryUser.selfCertificate)) {
     return this.primaryKey;
   }
   return null;
@@ -15272,7 +15272,7 @@ function encrypt(_ref4) {
 
   checkData(data);publicKeys = toArray(publicKeys);privateKeys = toArray(privateKeys);passwords = toArray(passwords);
 
-  if (!nativeAEAD() && asyncProxy) {
+  if (asyncProxy) {
     // use web worker if web crypto apis are not supported
     return asyncProxy.delegate('encrypt', { data: data, publicKeys: publicKeys, privateKeys: privateKeys, passwords: passwords, filename: filename, armor: armor });
   }
@@ -15322,7 +15322,7 @@ function decrypt(_ref5) {
 
   checkMessage(message);publicKeys = toArray(publicKeys);
 
-  if (!nativeAEAD() && asyncProxy) {
+  if (asyncProxy) {
     // use web worker if web crypto apis are not supported
     return asyncProxy.delegate('decrypt', { message: message, privateKey: privateKey, publicKeys: publicKeys, sessionKey: sessionKey, password: password, format: format });
   }
@@ -15534,7 +15534,11 @@ function formatUserIds(options) {
     if (!_util2.default.isString(id.name) || id.email && !_util2.default.isEmailAddress(id.email)) {
       throw new Error('Invalid user id format');
     }
-    return id.name + ' <' + id.email + '>';
+    id.name = id.name.trim();
+    if (id.name.length > 0) {
+      id.name += ' ';
+    }
+    return id.name + '<' + id.email + '>';
   });
   return options;
 }
@@ -15619,15 +15623,6 @@ function onError(message, error) {
   }
   // rethrow new high level error for api users
   throw new Error(message + ': ' + error.message);
-}
-
-/**
- * Check for AES-GCM support and configuration by the user. Only browsers that
- * implement the current WebCrypto specification support native AES-GCM.
- * @return {Boolean}   If authenticated encryption should be used
- */
-function nativeAEAD() {
-  return _util2.default.getWebCrypto() && _config2.default.aead_protect;
 }
 
 },{"./cleartext.js":5,"./config/config.js":9,"./key.js":38,"./message.js":42,"./util":69,"./worker/async_proxy.js":70,"es6-promise":2}],44:[function(_dereq_,module,exports){
@@ -19908,7 +19903,7 @@ exports.default = {
     if (!this.isString(data)) {
       return false;
     }
-    return (/ </.test(data) && />$/.test(data)
+    return (/</.test(data) && />$/.test(data)
     );
   },
 
